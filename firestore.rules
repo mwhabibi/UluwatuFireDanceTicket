@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == "CAEsi96WH7ea3qMbxTqgUfimMGS2";
+    }
+
+    function validTicketPrices(data) {
+      return data.keys().hasAll([
+          "showAdult", "showChild", "comboAdult", "comboChild"
+        ])
+        && data.keys().hasOnly([
+          "showAdult", "showChild", "comboAdult", "comboChild"
+        ])
+        && data.showAdult is int && data.showAdult >= 0
+        && data.showChild is int && data.showChild >= 0
+        && data.comboAdult is int && data.comboAdult >= 0
+        && data.comboChild is int && data.comboChild >= 0;
+    }
+
+    match /settings/ticketPrices {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isAdmin()
+        && validTicketPrices(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}
