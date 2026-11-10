@@ -42,6 +42,7 @@ export default function AdminDashboard() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [pendingPrices, setPendingPrices] = useState<TicketPrices | null>(null);
 
   useEffect(() => {
     if (!auth) {
@@ -59,6 +60,9 @@ export default function AdminDashboard() {
   }, [prices]);
 
   const isAuthorized = Boolean(user && adminUid && user.uid === adminUid);
+  const hasPriceChanges = priceFields.some(
+    (field) => Number(draft[field.key]) !== prices[field.key],
+  );
 
   const handleGoogleSignIn = async () => {
     if (!auth) return;
@@ -66,7 +70,7 @@ export default function AdminDashboard() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch {
-      setError("Login Google gagal. Periksa provider dan authorized domain Firebase.");
+      setError("Login belum berhasil. Pilih akun Google admin yang benar, lalu coba lagi.");
     }
   };
 
@@ -89,13 +93,25 @@ export default function AdminDashboard() {
       values[field.key] = amount;
     }
 
+    if (!priceFields.some((field) => values[field.key] !== prices[field.key])) {
+      setMessage("Tidak ada perubahan harga untuk disimpan.");
+      return;
+    }
+    setPendingPrices(values);
+  };
+
+  const confirmSave = async () => {
+    if (!pendingPrices) return;
     setSaving(true);
+    setMessage("");
+    setError("");
     try {
       const { saveTicketPrices } = await import("./ticketPricesFirestore");
-      await saveTicketPrices(values);
-      setMessage("Harga berhasil disimpan dan landing page akan diperbarui otomatis.");
+      await saveTicketPrices(pendingPrices);
+      setMessage("Harga berhasil diperbarui. Perubahan sudah tampil di website utama.");
+      setPendingPrices(null);
     } catch {
-      setError("Harga belum tersimpan. Periksa koneksi Firebase dan Firestore Rules.");
+      setError("Harga belum berhasil disimpan. Coba lagi; jika masih gagal, hubungi pengelola website.");
     } finally {
       setSaving(false);
     }
@@ -104,33 +120,32 @@ export default function AdminDashboard() {
   return (
     <main className="admin-page">
       <header className="admin-header">
-        <a className="admin-brand" href="/" aria-label="Kembali ke landing page">
+        <a className="admin-brand" href="/" aria-label="Kembali ke website utama">
           <span className="admin-brand-mark">U</span>
           <span>ULUWATU <i>KECAK</i><small>ADMIN DASHBOARD</small></span>
         </a>
-        <a className="admin-return" href="/">Lihat landing page <span>↗</span></a>
+        <a className="admin-return" href="/">Lihat website utama <span>↗</span></a>
       </header>
 
       <section className="admin-content">
         <div className="admin-heading">
           <label>PENGELOLAAN WEBSITE</label>
           <h1>Atur harga <i>tiket.</i></h1>
-          <p>Perubahan yang disimpan akan tampil di landing page tanpa deploy ulang.</p>
+          <p>Perubahan yang disimpan akan tampil di website utama tanpa deploy ulang.</p>
         </div>
 
         {!firebaseConfigured ? (
           <div className="admin-panel admin-message-panel">
-            <h2>Hubungkan Firebase terlebih dahulu</h2>
-            <p>Isi konfigurasi Firebase di file <code>.env.local</code>, lalu jalankan ulang website.</p>
-            <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Buka Firebase Console ↗</a>
+            <h2>Dashboard belum tersedia</h2>
+            <p>Fitur pengelolaan harga sedang tidak dapat digunakan. Silakan hubungi pengelola website.</p>
           </div>
         ) : authLoading ? (
-          <div className="admin-panel admin-message-panel" role="status">Memeriksa sesi admin…</div>
+          <div className="admin-panel admin-message-panel" role="status">Memeriksa akses admin…</div>
         ) : !user ? (
           <div className="admin-panel admin-login-panel">
             <div className="admin-lock" aria-hidden="true">✳</div>
-            <h2>Masuk sebagai admin</h2>
-            <p>Gunakan akun Google admin untuk mengelola harga tiket.</p>
+            <h2>Masuk ke dashboard</h2>
+            <p>Gunakan akun Google yang terdaftar sebagai admin untuk mengelola harga tiket.</p>
             <button className="admin-google-button" onClick={handleGoogleSignIn}>
               <span className="google-g" aria-hidden="true">G</span> Masuk dengan Google
             </button>
@@ -138,19 +153,15 @@ export default function AdminDashboard() {
           </div>
         ) : !adminUid ? (
           <div className="admin-panel admin-message-panel">
-            <h2>Tambahkan akun ini sebagai admin</h2>
-            <p>Salin UID di bawah ke <code>VITE_FIREBASE_ADMIN_UID</code> pada file <code>.env.local</code>, lalu masukkan UID yang sama ke <code>firestore.rules</code>.</p>
-            <code className="admin-uid">{user.uid}</code>
-            <button className="admin-secondary-button" onClick={() => navigator.clipboard?.writeText(user.uid)}>Salin UID</button>
+            <h2>Akses admin belum tersedia</h2>
+            <p>Dashboard belum dapat memverifikasi akses akun Anda. Silakan hubungi pengelola website.</p>
             <button className="admin-text-button" onClick={handleSignOut}>Keluar</button>
           </div>
         ) : !isAuthorized ? (
           <div className="admin-panel admin-message-panel">
-            <h2>Akun ini belum diizinkan</h2>
-            <p>UID akun Google yang sedang login. Gunakan UID ini pada <code>VITE_FIREBASE_ADMIN_UID</code> dan Firestore Rules jika akun ini memang ingin dijadikan admin.</p>
-            <code className="admin-uid">{user.uid}</code>
-            <button className="admin-secondary-button" onClick={() => navigator.clipboard?.writeText(user.uid)}>Salin UID akun ini</button>
-            <button className="admin-text-button" onClick={handleSignOut}>Ganti akun</button>
+            <h2>Akun ini belum memiliki akses</h2>
+            <p>Akun Google <strong>{user.email ?? "yang sedang digunakan"}</strong> tidak terdaftar sebagai admin. Keluar, lalu masuk kembali menggunakan akun admin yang benar.</p>
+            <button className="admin-secondary-button" onClick={handleSignOut}>Keluar dan pilih akun lain</button>
           </div>
         ) : (
           <form className="admin-panel admin-price-form" onSubmit={handleSave}>
@@ -193,17 +204,80 @@ export default function AdminDashboard() {
             </div>
             <div className="admin-save-row">
               <p>Data tersimpan di Firestore. Harga publik akan mengikuti perubahan ini.</p>
-              <button className="admin-save-button" type="submit" disabled={saving || status !== "connected"}>
-                {saving ? "Menyimpan…" : "Simpan perubahan"} <span>→</span>
+              <button className="admin-save-button" type="submit" disabled={saving || status !== "connected" || !hasPriceChanges}>
+                Simpan perubahan <span>→</span>
               </button>
             </div>
-            {status !== "connected" && <p className="admin-error" role="alert">Data harga belum berhasil dimuat. Periksa dokumen settings/ticketPrices dan aturan Firestore.</p>}
+            {status !== "connected" && <p className="admin-error" role="alert">Harga belum berhasil dimuat. Muat ulang halaman atau hubungi pengelola website.</p>}
             {error && <p className="admin-error" role="alert">{error}</p>}
-            {message && <p className="admin-success" role="status">{message}</p>}
+            {message && (
+              <div className="admin-success" role="status">
+                <span className="admin-success-check" aria-hidden="true">✓</span>
+                <p>{message}</p>
+              </div>
+            )}
           </form>
         )}
       </section>
       <footer className="admin-footer">Dashboard privat · Harga diperbarui langsung melalui Firestore</footer>
+
+      {pendingPrices && (
+        <div
+          className="admin-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) setPendingPrices(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !saving) setPendingPrices(null);
+          }}
+        >
+          <section
+            className="admin-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-confirm-title"
+            aria-describedby="admin-confirm-description"
+          >
+            <span className="admin-confirm-mark" aria-hidden="true">↗</span>
+            <label>PERIKSA KEMBALI</label>
+            <h2 id="admin-confirm-title">Simpan perubahan harga?</h2>
+            <p id="admin-confirm-description">Harga baru akan langsung ditampilkan di website utama setelah disimpan.</p>
+            <div className="admin-confirm-list">
+              {priceFields
+                .filter((field) => pendingPrices[field.key] !== prices[field.key])
+                .map((field) => (
+                  <div className="admin-confirm-item" key={field.key}>
+                    <span><b>{field.packageName}</b><small>{field.title}</small></span>
+                    <span className="admin-confirm-values">
+                      <del>{formatRupiah(prices[field.key])}</del>
+                      <strong>{formatRupiah(pendingPrices[field.key])}</strong>
+                    </span>
+                  </div>
+                ))}
+            </div>
+            {error && <p className="admin-error" role="alert">{error}</p>}
+            <div className="admin-confirm-actions">
+              <button
+                className="admin-cancel-button"
+                type="button"
+                autoFocus
+                disabled={saving}
+                onClick={() => setPendingPrices(null)}
+              >
+                Kembali edit
+              </button>
+              <button
+                className="admin-save-button"
+                type="button"
+                disabled={saving}
+                onClick={confirmSave}
+              >
+                {saving ? <><span className="admin-spinner" aria-hidden="true" /> Menyimpan…</> : <>Ya, simpan harga <span>→</span></>}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
